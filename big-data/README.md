@@ -34,12 +34,12 @@ This repository demonstrates usage of an [Azure **_Confidential Clean Room_** (*
   - [View output (woodgrove)](#view-output-woodgrove)
 - [Advanced Topics](#advanced-topics)
   - [How do I specify a date range for query execution ?](#how-do-i-specify-a-date-range-for-query-execution-)
-  - [Troubleshooting](#troubleshooting)
-    - [Hitting `TaskCanceledException` or `HttpRequestException` error during `run-query.ps1`](#hitting-taskcanceledexception-or-httprequestexception-error-during-run-queryps1)
-    - [The containers backing the various personas stopped. How to re-start them and resume the workflow?](#the-containers-backing-the-various-personas-stopped-how-to-re-start-them-and-resume-the-workflow)
-    - [Failure / Need help ?](#failure--need-help-)
   - [How do I switch between demos? (northwind, woodgrove)](#how-do-i-switch-between-demos-northwind-woodgrove)
   - [How do I cleanup the environment to create a brand new/fresh setup?](#how-do-i-cleanup-the-environment-to-create-a-brand-newfresh-setup)
+- [Troubleshooting](#troubleshooting)
+  - [Hitting `TaskCanceledException` or `HttpRequestException` error during `run-query.ps1`](#hitting-taskcanceledexception-or-httprequestexception-error-during-run-queryps1)
+  - [The containers backing the various personas stopped. How to re-start them and resume the workflow?](#the-containers-backing-the-various-personas-stopped-how-to-re-start-them-and-resume-the-workflow)
+  - [Failure/need help?](#failureneed-help)
 
 # Overview
 
@@ -136,7 +136,7 @@ Initialize the environment for executing the samples by executing the following 
 ```
 
 > [!NOTE]
-> For using a specific Azure subscription, use the `-subscription` parameter in the command above to specify the subscription ID.
+> For using an Azure subscription, use the `-subscription` parameter in the command above to specify the subscription ID.
 
 > [!IMPORTANT]
 > The above script creates an Azure Storage account for OIDC usage when running for the `operator` persona. If you have a pre-configured Azure storage account for OIDC usage then supply that account name for the `operator` persona as follows:
@@ -144,6 +144,10 @@ Initialize the environment for executing the samples by executing the following 
 > $storageAccountName = <name>
 > ./scripts/initialize-environment.ps1 -preProvisionedOIDCStorageAccount $storageAccountName
 > ```
+> For running this sample on MSFT (internal) tenants, you need to use the `preProvisionedOIDCStorageAccount` parameter in the above command to specify the name of a preprovisioned storage account, to be used for the OIDC configuration. This storage account has to be whitelisted to be used for Federation on Managed Identities using the process:
+> 1. Create a static website in a storage account in your subscription and save the weburl using the steps outlined [here](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blob-static-website-how-to?tabs=azure-portal). This static website will be used for sharing OIDC public configs for the consortium
+> 2. Create an ICM using the template: https://portal.microsofticm.com/imp/v3/incidents/create?tmpl=F332q2 and use that web URL to request the exception. The internal TSG for this exception is present [here](https://microsoft.sharepoint.com/teams/CSEOAAD/SitePages/Entra-ID-Application-Authentication-Methods-Policy.aspx?ct=1699632892251&or=Teams-HL&ga=1#msi-federated-identity-credential-policy).
+
 
 Below is an example setup of 3 command prompts in which `start-environment` was executed before and now `initialize-environment` is about to be executed.
 
@@ -391,9 +395,23 @@ The demos can optionally run by reading the data only for the specified date ran
 The run-query.ps1 should have both the start and end dates mentioned for the query to read the data only from the specified date range.
 If no date range is mentioned in the run-query.ps1, all the data from the data sources is loaded and used for running the query.
 
+## How do I switch between demos? (northwind, woodgrove)
+Switching demos involves the below steps:
+1. Exit the persona specific environment.
+2. Run `start-enviroment.ps1` again with the new desired value for `-demo` parameter.
+3. Run `initialize-environment.ps1`.
+4. Then start from the [Publishing Data](#publishing-data) step.
+ 
+![alt text](../assets/change-demo-1.png)
+![alt text](../assets/change-demo-2.png)
+## How do I cleanup the environment to create a brand new/fresh setup?
+```powershell
+sudo git clean -fdx ./demo-resources/
+```
+Above script removes all generated files and folders under the `demo-resources` folder. This will cause creation of new consortium and cleanroom cluster instances for the next run. On running `start-environment.ps1` again if it detects an existing samples environment and prompts to overwrite the container, choose `Y` ie yes.
 
-## Troubleshooting
-### Hitting `TaskCanceledException` or `HttpRequestException` error during `run-query.ps1`
+# Troubleshooting
+## Hitting `TaskCanceledException` or `HttpRequestException` error during `run-query.ps1`
 You might encounter the below errors on executing run-query.ps1 while previously it worked successfully:
 ```json
 Executing query 'woodgrove-query1-ec6308e0' as 'woodgrove'...
@@ -425,7 +443,7 @@ To resolve this issue re-run the following command from the `operator` console:
 ```
 The above script will perform CCF network recovery if its required to bring back the instance. After this is successful try running the query again.
 
-### The containers backing the various personas stopped. How to re-start them and resume the workflow?
+## The containers backing the various personas stopped. How to re-start them and resume the workflow?
 If you had a running setup that was successfully executing queries and the client side containers for one or more personas stopped for any reason then do the following:
 
 **Operator persona**  
@@ -449,7 +467,7 @@ Re-run `start-environment.ps1` followed by `accept-invitation.ps1`. Starting the
 ```
 The `accept-invitation` script will re-launch the required client side containers.
 
-### Running `accept-invitation.ps1` is failing with `reauth_required` message. <!-- omit from toc -->
+## Running `accept-invitation.ps1` is failing with `reauth_required` message. <!-- omit from toc -->
 You may encounter the below error on running `accept-invitation.ps1`:  
 ![alt text](../assets/reauth_required.png)  
 
@@ -460,20 +478,5 @@ This happens if the login session for the persona has gone stale. To fix this:
 ![alt text](../assets/northwind-governance-containers.png)
 1. Run `accept-invitation.ps1` again. This would now prompt you to login and restart the governance client containers using the new session.
 
-### Failure / Need help ?
+## Failure/need help?
 Please share the `demo-resources/shared/public/k8s-credentials.yaml` config with ACCR team to help out.
-
-## How do I switch between demos? (northwind, woodgrove)
-Switching demos involves the below steps:
-1. Exit the persona specific environment.
-2. Run `start-enviroment.ps1` again with the new desired value for `-demo` parameter.
-3. Run `initialize-environment.ps1`.
-4. Then start from the [Publishing Data](#publishing-data) step.
- 
-![alt text](../assets/change-demo-1.png)
-![alt text](../assets/change-demo-2.png)
-## How do I cleanup the environment to create a brand new/fresh setup?
-```powershell
-sudo git clean -fdx ./demo-resources/
-```
-Above script removes all generated files and folders under the `demo-resources` folder. This will cause creation of new consortium and cleanroom cluster instances for the next run. On running `start-environment.ps1` again if it detects an existing samples environment and prompts to overwrite the container, choose `Y` ie yes.
