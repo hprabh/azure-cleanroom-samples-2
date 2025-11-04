@@ -83,6 +83,9 @@ All the involved parties need to bring up a local environment to participate in 
 >
 > It is **recommended to use GitHub Codespaces** to create the local environment which would have the above prerequisites pre-installed.
 
+> [!NOTE]
+> If you have tried this sample in the past, it is necessary to remove all previously used container images from your docker, without which new images will not get pulled.
+
 Each party requires an independent environment. To create such an environment, open a separate powershell window for each party and run the following commands:
 
 
@@ -351,6 +354,24 @@ You can see various artifacts like the datasets / audit events / queries being m
 Open http://localhost:xxx in your browser to access the governance portal.
 ```
 
+To view the audit events, follow this path on the Governance UI (on the left pane):
+  Contracts-> Select the "contract id" listed there -> Select "Events" button on the right pane
+![alt text](../assets/audit-eventspage.png)
+
+These events will have all details on the query execution, such as:
+  1. Query execution start, the associated document id and the query runId
+  2. Loading input dataset and statistics like the input row count.
+  3. Kmin failure details like the pre-execution failures on the configured conditions.
+  4. Query failure errors and execution completion
+  5. Writing output on success and statistics like the output row count.
+  6. Kmin failure details like post-execution failures on the configured filtering.
+
+A few examples of statistics:
+![alt text](../assets/audit-loadstats.png)
+
+Failures:
+![alt text](../assets/audit-prekmin.png)
+
 ## Adding query to execute in the collaboration (woodgrove)
 
 The following command adds details about the query to be executed within the clean room:
@@ -360,7 +381,7 @@ The following command adds details about the query to be executed within the cle
 ./scripts/contract/add-query.ps1
 ```
 
-The query is picked from [query.txt](demos/analytics-sse/query/woodgrove/query1/query.txt).
+The query is picked from [segmentedQuery.yaml](demos/analytics-sse/query/woodgrove/query1/segmentedQuery.yaml).
 
 ## Agreeing upon the query for execution (northwind, woodgrove)
 
@@ -394,6 +415,51 @@ $startDate = [datetimeoffset]"2025-09-01"
 The demos can optionally run by reading the data only for the specified date range. The `generate-data.ps1` command generates data divided into folders, each having the date (in format 'yyyy-MM-dd') as its name.
 The run-query.ps1 should have both the start and end dates mentioned for the query to read the data only from the specified date range.
 If no date range is mentioned in the run-query.ps1, all the data from the data sources is loaded and used for running the query.
+
+## Privacy: How do I configure Pre/Post Conditions on the Query
+A SQL query can typically be segregated into 3 sections:
+1. Input data and it's filtering
+2. Query logic execution on the filtered data
+3. Query output
+
+To ensure privacy of the data available to the query, there are 2 mechanisms with which we can ensure that the query doesn't leak any private details:
+1. *Pre execution checks*: These are the checks which can be used to enforce that there is a minimum amount of data (count of rows) in the each of the data views that the collaborators are contributing. This ensures that there is sufficient data in each dataset before there are joined together. The pre execution check can fail to prevent this if a filtering of one dataset is done after the pre execution check is done. To ensure this doesn't happen, we propose adding the pre execution checks just before a query executes, so the check is applied only on the final data that is available to a query. This is discussed later in the section, on how to segregate the query phases.
+At the time of proposing the query the pre execution checks can be configured, specifying the viewName and the minRowCount in that view, for the query to execute. If the minRowCount is not met, the query execution will fail.
+
+The sample query has these preconditions defined on the 2 views:
+  ```yaml
+  preConditions:
+  - minRowCount: 100
+    viewName: publisher_view
+  - minRowCount: 100
+    viewName: consumer_view
+  ```
+
+2. *Post Execution filtering*: Usually to avoid identification, it is imperative that the query performs an aggregation on the final ouput. This aggregation can fail to prevent data leakage if there is insufficient amount of data while grouping it for aggregation. To ensure this, ACCR provides a mechanism to filter those rows in the output, which did not have enough rows at the time of grouping them.
+This can be configured by:
+
+* In the final output of the Query, include an output field which publishes Count of each group while aggregating using COUNT(*) as output.
+```yaml
+The sample query does this: "SELECT author, COUNT(*) AS Number_Of_Mentions FROM .... "
+```
+* Configure postFilers to filter out groups which have less than configured threshold of rows in the groups.
+```yaml
+The sample has this post execution filter:
+  postFilters:
+  - columnName: Number_Of_Mentions
+    value: 2
+```
+
+*Query Segment*: As discussed above, pre execution filters can fail to ensure privacy if there is filtering happening after the check is applied. To avoid this, it is suggested to divide the Query into different segments, where each segment executes some SQL Query statements, in the same SPARK-SQL context. So view created in one segment is visible to the other segments also. It is recommended, to keep the actual query logic in the final segment which also generates the output.
+If there is any filtering that needs to happen on the data, should happen in the previous segments.
+The Pre-execution checks and the post execution filtering may only be configuted on the final segment, which checks the actual input data to the query logic and the actual group row count.
+The executionSequence of each segment defines a graph of execution, where segments with same executionSequence execute in parallel, followed by segments with higher executionSequence.
+The sample query here demonstrates this [segmentedQuery.yaml](demos/analytics-sse/query/woodgrove/query1/segmentedQuery.yaml).
+
+## Privacy: How do I restrict input / output fields in a Query
+The [Publish Data][scripts/data/publish-data.ps1] step uses the `az cleanroom datastore add` coommand to define the schema of the dataset using the parameter `schema-fields`, specifying the format and field names with data types.
+To publish these datasets, the [script](scripts/specification/add-specification-data.ps1) uses the `az cleanroom collaboration dataset publish` command with the parameter `policy-allowed-fields` to define which fields are allowed to be accessed by the query or as output.
+
 
 ## How do I switch between demos? (northwind, woodgrove)
 Switching demos involves the below steps:
